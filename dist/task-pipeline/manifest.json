@@ -1,0 +1,95 @@
+{
+  "contract": "helm.widget/1",
+  "id": "task-pipeline",
+  "name": "Task pipeline",
+  "version": "0.1.0",
+  "description": "Task counts per lifecycle status across linked projects, with Build on ready tasks.",
+  "category": "Work",
+  "icon": "layers",
+  "size": {
+    "w": 2,
+    "h": 5,
+    "minW": 2,
+    "minH": 4
+  },
+  "settings": [
+    {
+      "id": "projectId",
+      "type": "select",
+      "label": "Project",
+      "help": "Leave empty for all linked projects.",
+      "options": {
+        "from": "connection",
+        "connection": "tdt",
+        "call": "tdt_project_list"
+      }
+    },
+    {
+      "id": "limit",
+      "type": "number",
+      "label": "Ready tasks shown",
+      "min": 0,
+      "max": 20,
+      "step": 1,
+      "default": 5,
+      "unit": "tasks"
+    },
+    {
+      "id": "source",
+      "type": "select",
+      "label": "Task source",
+      "default": "config",
+      "help": "Each project's config.json task_system unless you override it here.",
+      "options": [
+        {
+          "value": "config",
+          "label": "Project config (task_system)"
+        },
+        {
+          "value": "internal",
+          "label": "Internal tasks"
+        },
+        {
+          "value": "jira",
+          "label": "Jira (needs 023)"
+        },
+        {
+          "value": "linear",
+          "label": "Linear (needs 023)"
+        },
+        {
+          "value": "github",
+          "label": "GitHub (needs 023)"
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "tdt",
+      "kind": "tdt-mcp",
+      "operations": [
+        "tdt_project_list"
+      ]
+    },
+    {
+      "id": "sp",
+      "kind": "files",
+      "root": "project",
+      "paths": [
+        ".tdt-project/tdt-software-production/**"
+      ],
+      "operations": [
+        "list",
+        "read"
+      ]
+    }
+  ],
+  "capabilities": [
+    "orchestrate"
+  ],
+  "permissions": {
+    "write": false
+  },
+  "entry": "index.html"
+}

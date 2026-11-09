@@ -1,0 +1,35 @@
+{
+  "contract": "helm.tool/1",
+  "id": "kanban",
+  "name": "Kanban",
+  "version": "0.1.0",
+  "description": "Software-production tasks by status. Start builds from ready cards.",
+  "icon": "grid",
+  "multi": true,
+  "settings": [
+    { "id": "project", "type": "select", "label": "Project", "required": true,
+      "options": { "from": "connection", "connection": "tdt", "call": "tdt_project_list" } },
+    { "id": "host", "type": "choice", "label": "Build with",
+      "options": [{ "value": "claude", "label": "Claude Code" }, { "value": "codex", "label": "Codex" }], "default": "claude" },
+    { "id": "showCancelled", "type": "checkbox", "label": "Show cancelled column", "default": false },
+    { "id": "wipLimit", "type": "number", "label": "Doing limit", "min": 1, "max": 20, "step": 1, "default": 3, "unit": "tasks",
+      "help": "The Doing column turns amber when it holds more than this." },
+    { "id": "source", "type": "select", "label": "Task source", "default": "config",
+      "help": "Where tasks come from. The project's config.json task_system unless you override it here.",
+      "options": [
+        { "value": "config", "label": "Project config (task_system)" },
+        { "value": "internal", "label": "Internal tasks" },
+        { "value": "jira", "label": "Jira (needs 023)" },
+        { "value": "linear", "label": "Linear (needs 023)" },
+        { "value": "github", "label": "GitHub (needs 023)" }
+      ] }
+  ],
+  "connections": [
+    { "id": "tdt", "kind": "tdt-mcp", "operations": ["tdt_project_list"] },
+    { "id": "sp", "kind": "files", "root": "project", "paths": [".tdt-project/tdt-software-production/**"], "operations": ["list", "read"] },
+    { "id": "handoffs", "kind": "files", "root": "workspace", "paths": [".tdt/state/software-production/*/tasks/*.md"], "operations": ["read"] }
+  ],
+  "capabilities": ["orchestrate"],
+  "permissions": { "write": false },
+  "entry": "index.html"
+}

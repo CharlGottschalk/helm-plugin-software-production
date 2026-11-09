@@ -1,0 +1,23 @@
+{
+  "name": "helm-plugin-software-production",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Helm plugin for tdt-software-production: Kanban tool, Ready tasks and Task pipeline widgets",
+  "keywords": ["helm-plugin"],
+  "files": ["dist"],
+  "helm": {
+    "contract": 1,
+    "tools": ["dist/kanban"],
+    "widgets": ["dist/ready-tasks", "dist/task-pipeline"]
+  },
+  "scripts": {
+    "build": "helm-sdk build",
+    "validate": "helm-sdk validate",
+    "dev": "helm-sdk dev",
+    "check": "node test/tasks-check.mjs"
+  },
+  "devDependencies": {
+    "@usetdt/helm-sdk": "file:../helm/packages/sdk"
+  }
+}

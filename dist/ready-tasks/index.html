@@ -1,0 +1,49 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<!-- Helm injects theme tokens, the UI kit and the bridge before this. Shared styles: ../shared/ui.js -->
+<style>
+  body { padding: 0 var(--sp-1); }
+</style>
+</head>
+<body>
+  <div id="app" class="h-state h-state--loading" role="status" aria-live="polite">Loading…</div>
+  <script type="module">
+function $(){let t=globalThis.helm;if(!t)throw new Error("window.helm is missing: this code must run inside a Helm frame");return t}function l(t,e={},...s){let r=document.createElement(t);for(let[n,o]of Object.entries(e))r.setAttribute(n,o);for(let n of s)n!=null&&n!==!1&&r.append(typeof n=="number"?String(n):n);return r}var b=".tdt-project/tdt-software-production",z=["draft","ready","doing","blocked","done","cancelled"],B=/^([a-zA-Z0-9][a-zA-Z0-9_-]{0,63})\.md$/;function R(t,e,s){let r=c=>s.match(new RegExp(`^${c}:[ \\t]*(.+)$`,"m"))?.[1].trim(),o=(s.match(/^#\s+(.+)$/m)?.[1].trim()??t).replace(new RegExp(`^${t}\\s*[—–-]\\s*`),""),a=(r("Status")??"").toLowerCase(),i=r("Dependencies");return{id:t,projectId:e,title:o,status:z.includes(a)?a:"draft",priority:r("Priority")?.toLowerCase(),dependencies:!i||/^none$/i.test(i)?[]:i.split(",").map(c=>c.trim()).filter(Boolean),blocked:r("Blocked")}}function D(t){if(t==null||t==="")return`${b}/tasks`;if(typeof t!="string")return null;let e=t.replace(/\/+$/,"").replace(/^\.\//,"");return e.startsWith("/")||e.split("/").some(s=>s===".."||s==="."||s==="")?null:e===b||e.startsWith(b+"/")?e:null}var d=class extends Error{constructor(e,s="error"){super(e),this.code=s}},v=(t,e)=>{if(t?.ok)return t.data;throw new d(`${e}: ${t?.error?.message??"no answer"}`,t?.error?.code==="not_found"?"not_found":"error")},H={label:"Internal tasks",async list(t,e,s){let r=D(s.path);if(!r)throw new d("The task folder in config.json must stay inside .tdt-project/tdt-software-production/");let o=v(await t.call("sp","list",{project:e}),"Listing tasks").files.map(i=>i.path).filter(i=>i.startsWith(r+"/")&&B.test(i.slice(r.length+1))),a=[];for(let i=0;i<o.length;i+=100){let c=v(await t.call("sp","read",{project:e,paths:o.slice(i,i+100)}),"Reading tasks");for(let u of c.files)u.text!==void 0&&a.push(R(u.path.split("/").pop().replace(/\.md$/,""),e,u.text))}return a}},x=t=>({label:t,later:!0}),N={internal:H,jira:x("Jira"),linear:x("Linear"),github:x("GitHub")};async function O(t,e,s="config"){let r=await t.call("sp","read",{project:e,path:`${b}/config.json`});if(!r.ok&&r.error?.code==="not_found")throw new d("This project has no software-production setup (.tdt-project/tdt-software-production/config.json).","nosetup");let n;try{n=JSON.parse(v(r,"Reading config.json").text)}catch(u){throw u instanceof d?u:new d("The project’s software-production config.json is not valid JSON.")}let o=n&&typeof n.task_system=="object"&&n.task_system||{},a=!o.kind||o.kind==="internal"?"internal":String(o.provider??"an external task system").toLowerCase(),i=s&&s!=="config"?s:a,c=N[i];if(!c||c.later)throw new d(`Tasks live in ${c?.label??o.provider??i}. This plugin reads them once task 023 adds that adapter.`,"later");return c.list(t,e,i===a?o:{})}async function T(t){let e=[],s=null;do{let r=v(await t.call("tdt","tdt_project_list",{limit:50,...s?{cursor:s}:{}}),"Listing projects");e.push(...r.items),s=r.next_cursor}while(s);return e.map(r=>{let n=r.path.split(/[\\/]/).filter(Boolean).pop()??r.id;return{id:r.id,name:n,code:n.replace(/[^a-z0-9]/gi,"").slice(0,3).toUpperCase()||"PRJ",availability:r.availability}})}async function S(t,e,s="config"){let r=[],n=[];for(let o of e.filter(a=>a.availability==="available"))try{r.push(...await O(t,o.id,s))}catch(a){a.code!=="nosetup"&&n.push({projectId:o.id,message:a.message,code:a.code})}return{tasks:r,errors:n}}function A(t){let e=[...new Set(t.filter(r=>r.code==="later").map(r=>r.message))],s=t.length-t.filter(r=>r.code==="later").length;return[...e,s?`${s} project${s>1?"s":""} could not be read.`:""].filter(Boolean).join(" ")}var P=`
+.sp-meta{display:flex;align-items:center;gap:var(--sp-3);min-width:0}
+.sp-icon-btn{display:grid;place-items:center;width:22px;height:22px;margin-left:auto;padding:0;font:inherit;color:var(--c-text-2);background:none;border:1px solid var(--c-line);border-radius:var(--radius-sm);cursor:pointer}
+.sp-icon-btn:hover{color:var(--c-cyan);border-color:var(--c-cyan)}
+.sp-notice{display:flex;align-items:center;gap:var(--sp-2);padding:var(--sp-2) var(--sp-3);font-size:var(--fs-sm);color:var(--c-text-1);background:var(--c-amber-ghost);border:1px solid var(--c-amber);border-radius:var(--radius-sm)}
+.sp-notice button{margin-left:auto;padding:0 var(--sp-1);font:inherit;color:var(--c-text-2);background:none;border:0;cursor:pointer}
+.sp-dot{display:inline-block;width:7px;height:7px;flex-shrink:0;transform:rotate(45deg);background:currentColor}
+.sp-tone-cyan{color:var(--c-cyan)}.sp-tone-amber{color:var(--c-amber)}.sp-tone-red{color:var(--c-red)}.sp-tone-green{color:var(--c-green)}.sp-tone-neutral{color:var(--c-text-3)}
+.sp-id{flex-shrink:0;min-width:26px;padding-top:2px;font-family:var(--font-mono);font-size:var(--fs-2xs);letter-spacing:.08em;color:var(--c-cyan)}
+.sp-title{font-size:var(--fs-md);color:var(--c-text-0)}
+.sp-small{font-family:var(--font-mono);font-size:var(--fs-2xs);color:var(--c-text-2)}
+.sp-reason{font-size:var(--fs-xs);color:var(--c-text-2)}
+.sp-muted{font-size:var(--fs-sm);color:var(--c-text-2)}
+.sp-tasks{display:flex;flex-direction:column;gap:var(--sp-3)}
+.sp-list{display:flex;flex-direction:column;list-style:none;margin:0;padding:0}
+.sp-task{display:flex;align-items:flex-start;gap:var(--sp-3);padding:var(--sp-2) 0;border-bottom:1px solid var(--c-line)}
+.sp-task:last-child{border-bottom:0}
+.sp-task-body{display:flex;flex-direction:column;gap:4px;min-width:0}
+.sp-task-meta{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-2);font-size:var(--fs-2xs);color:var(--c-text-2)}
+.sp-done .sp-title{color:var(--c-text-2);text-decoration:line-through}
+.sp-link{padding:0;font-family:var(--font-mono);font-size:var(--fs-2xs);letter-spacing:.08em;color:var(--c-text-2);background:none;border:0;cursor:pointer}
+.sp-link:hover{color:var(--c-cyan);text-decoration:underline}
+.sp-seg{display:flex;align-self:flex-start;border:1px solid var(--c-line);border-radius:var(--radius-sm);overflow:hidden}
+.sp-seg button{height:24px;padding:0 var(--sp-3);font-family:var(--font-mono);font-size:var(--fs-2xs);letter-spacing:.12em;text-transform:uppercase;color:var(--c-text-2);background:none;border:0;cursor:pointer}
+.sp-seg button[aria-pressed=true]{color:var(--c-on-accent);background:var(--c-cyan)}
+.sp-metrics{display:flex;flex-direction:column;gap:var(--sp-3);list-style:none;margin:0;padding:0}
+.sp-metric-row{display:flex;justify-content:space-between;margin-bottom:4px;font-size:var(--fs-sm);color:var(--c-text-1)}
+.sp-metric-row>span:first-child{display:inline-flex;align-items:center;gap:var(--sp-2)}
+.sp-meter{display:flex;gap:2px;height:8px;width:100%}
+.sp-meter>span{flex:1;background:rgb(var(--rgb-accent) / .08);transform:skewX(var(--skew))}
+.sp-meter>span.on{background:currentColor}
+.sp-handoff{width:100%;max-height:280px;overflow:auto;margin:0;padding:var(--sp-2);font-family:var(--font-mono);font-size:var(--fs-xs);white-space:pre-wrap;overflow-wrap:anywhere;color:var(--c-text-1);background:var(--c-well);border:1px solid var(--c-line);border-radius:var(--radius-sm)}
+.h-btn--sm{font-size:var(--fs-xs);padding:2px var(--sp-2)}
+`;function L(){if(document.getElementById("sp-css"))return;let t=document.createElement("style");t.id="sp-css",t.textContent=P,document.head.append(t)}var E=t=>t==="high"?"red":t==="medium"?"amber":"cyan";var C=(t,e)=>l("span",{class:`h-badge${t==="neutral"?"":` h-badge--${t}`}`},e);function I(t,e,{ghost:s=!0,small:r=!0,title:n}={}){let o=l("button",{class:`h-btn${s?" h-btn--ghost":""}${r?" h-btn--sm":""}`,type:"button",...n?{title:n}:{}},t);return o.addEventListener("click",e),o}function y(t,e,s,r){t.className=`h-state${e==="loading"?" h-state--loading":e==="error"?" h-state--error":""}`,t.setAttribute("role",e==="error"?"alert":"status"),t.replaceChildren(l("span",{},s),...r?[I(r.label,r.run,{ghost:e==="error",small:!1})]:[])}var _=(t,...e)=>t.replaceChildren(...e.filter(s=>s!=null&&s!==!1));var f=$(),g=document.getElementById("app");L();var h={},p=null,m=!1,k=0;async function w(){let t=++k;p||y(g,"loading","Loading tasks…");try{let e=await T(f),s=await S(f,e,h.source);if(t!==k)return;p={projects:e,...s},j()}catch(e){t===k&&y(g,"error",e.message,{label:"Retry",run:w})}}function j(){if(!p)return;let t=(h.priorities??[]).filter(n=>["high","medium","low"].includes(n)),e=Number(h.limit)||10,s=p.tasks.filter(n=>n.status===(m?"done":"ready")&&(!t.length||t.includes(n.priority??"low"))).slice(0,e),r=(n,o)=>{let a=l("button",{type:"button","aria-pressed":String(m===o)},n);return a.addEventListener("click",()=>(m=o,j())),a};g.className="sp-tasks",g.removeAttribute("role"),_(g,l("div",{class:"sp-seg",role:"group","aria-label":"Show"},r("Ready",!1),r("Done",!0)),s.length===0&&l("p",{class:"sp-muted",style:"margin:0"},m?"Nothing completed yet.":"No ready tasks. Triage moves tasks here."),p.errors.length>0&&l("p",{class:"sp-muted",style:"margin:0"},A(p.errors)),l("ul",{class:"sp-list"},...s.map(n=>{let o=p.projects.find(i=>i.id===n.projectId),a=o&&l("button",{class:"sp-link",type:"button",title:`Open ${o.name}`},o.code);return a?.addEventListener("click",()=>f.openTab({kind:"project",id:o.id})),l("li",{class:`sp-task${m?" sp-done":""}`},l("span",{class:"sp-id"},n.id),l("div",{class:"sp-task-body"},l("span",{class:"sp-title"},n.title),l("span",{class:"sp-task-meta"},n.priority&&C(E(n.priority),n.priority),a)))})))}f.on("settings",t=>{let e=!p||t.source!==h.source;h=t||{},e?w():j()});f.on("refresh",w);f.ready();
+</script>
+</body>
+</html>
