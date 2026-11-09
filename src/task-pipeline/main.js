@@ -1,6 +1,6 @@
 // Task pipeline widget: counts per lifecycle status, with Build on the first ready tasks.
 import { getHelm } from '@usetdt/helm-sdk/frame'
-import { STATUSES, canBuild, endedBuilds, errorLine, listProjects, loadAll, loadProject, sessionFor } from '../shared/tasks.js'
+import { STATUSES, canBuild, endedBuilds, errorLine, listProjects, loadAll, loadProject, sessionFor, startBuild } from '../shared/tasks.js'
 import { STATUS_LABELS, STATUS_TONES, badge, button, dot, el, meter, state, styles, fill } from '../shared/ui.js'
 
 const helm = getHelm()
@@ -38,9 +38,7 @@ async function load() {
 }
 
 async function build(t) {
-  message = null
-  const r = await helm.orchestrate.build({ projectId: t.projectId, taskId: t.id })
-  if (!r.ok && r.error !== 'Declined by the user') message = r.error
+  message = await startBuild(helm, t)
   render()
 }
 

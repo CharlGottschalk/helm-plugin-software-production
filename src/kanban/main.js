@@ -4,7 +4,7 @@
 // Linear issue's state or a GitHub board item's status through a confirmed http write (tasks 026, 029); into Doing, Helm offers to start the
 // build instead when the project's task source can be built. Done/Cancelled hand off to the close skill.
 import { getHelm } from '@usetdt/helm-sdk/frame'
-import { STATUSES, canBuild, endedBuilds, listProjects, loadProject, moveOutcome, planMove, readHandoff, sessionFor } from '../shared/tasks.js'
+import { STATUSES, canBuild, endedBuilds, listProjects, loadProject, moveOutcome, planMove, readHandoff, sessionFor, startBuild } from '../shared/tasks.js'
 import { STATUS_LABELS, STATUS_TONES, badge, button, dot, el, iconButton, notice, state, styles, fill } from '../shared/ui.js'
 
 const helm = getHelm()
@@ -44,14 +44,12 @@ async function load() {
   }
 }
 
+const hostOf = () => (settings.host === 'codex' ? 'codex' : 'claude')
+
 async function build(t) {
-  message = null
-  const r = await helm.orchestrate.build({ projectId: t.projectId, taskId: t.id, host: settings.host === 'codex' ? 'codex' : 'claude' })
-  if (!r.ok && r.error !== 'Declined by the user') message = r.error
+  message = await startBuild(helm, t, hostOf())
   render()
 }
-
-const hostOf = () => (settings.host === 'codex' ? 'codex' : 'claude')
 
 async function move(t, to) {
   if (moving.has(t.id)) return

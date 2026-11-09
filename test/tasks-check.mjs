@@ -250,3 +250,16 @@ console.log('linear-check ok')
   assert.equal(moveOutcome({ ok: true, status: 200, data: { data: { updateProjectV2ItemFieldValue: null } } }, board[0]).status, 'reverted')
 }
 console.log('github-check ok')
+
+{
+  const { startBuild } = await import('../src/shared/tasks.js')
+  const seen = []
+  const h = (r) => ({ orchestrate: { build: async (a) => (seen.push(a), r) } })
+  const t = { projectId: 'p', id: '001' }
+  assert.equal(await startBuild(h({ ok: true }), t, 'codex'), null)
+  assert.deepEqual(seen.pop(), { projectId: 'p', taskId: '001', host: 'codex' })
+  assert.equal(await startBuild(h({ ok: false, error: 'Declined by the user' }), t), null)
+  assert.deepEqual(seen.pop(), { projectId: 'p', taskId: '001' })
+  assert.equal(await startBuild(h({ ok: false, error: 'boom' }), t), 'boom')
+}
+console.log('build-check ok')

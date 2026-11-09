@@ -52,7 +52,6 @@ const unwrap = (r, what) => {
 /* ── adapters ── */
 
 const internal = {
-  label: 'Internal tasks',
   async list(helm, projectId, system) {
     const dir = taskDir(system.path)
     if (!dir) throw new SourceError('The task folder in config.json must stay inside .tdt-project/tdt-software-production/')
@@ -107,7 +106,6 @@ function gql(r, what, service = 'linear') {
 }
 
 const linear = {
-  label: 'Linear',
   async list(helm, projectId, system, opts = {}) {
     const team = typeof system.project_ref === 'string' && system.project_ref ? system.project_ref : opts.team
     if (!team) throw new SourceError('Linear needs a team: set task_system.project_ref in config.json (the team key, such as ENG), or the Linear team setting.', 'setup')
@@ -161,7 +159,6 @@ export function githubStatus(optionName, statusMap) {
 }
 
 const github = {
-  label: 'GitHub',
   async list(helm, projectId, system, opts = {}) {
     const raw = typeof system.project_ref === 'string' && system.project_ref ? system.project_ref : opts.github
     if (!raw) throw new SourceError('GitHub needs a repository or board: set task_system.project_ref in config.json (owner/repo, or owner/projects/<number>), or the GitHub source setting.', 'setup')
@@ -210,14 +207,6 @@ const github = {
 }
 
 export const ADAPTERS = { internal, linear, github }
-
-/** Source override setting values, in the order the setting lists them. */
-export const SOURCE_OPTIONS = [
-  { value: 'config', label: 'Project config (task_system)' },
-  { value: 'internal', label: 'Internal tasks' },
-  { value: 'linear', label: 'Linear' },
-  { value: 'github', label: 'GitHub' },
-]
 
 /**
  * A project's tasks from its source: the project's task_system config, unless the
@@ -354,6 +343,12 @@ export function moveOutcome(r, t) {
   if (code === 'declined') return { status: 'reverted' }
   if (code === 'conflict') return { status: 'reverted', reload: true, message: `${t.id} changed since the board read it, so nothing was written. Reloaded it; try the move again.` }
   return { status: 'reverted', message: w?.error?.message ?? r?.error ?? 'The move failed.' }
+}
+
+/** Start a build of `t`; the error to show, or null (also when the user declined). */
+export async function startBuild(helm, t, host) {
+  const r = await helm.orchestrate.build({ projectId: t.projectId, taskId: t.id, ...(host ? { host } : {}) })
+  return !r.ok && r.error !== 'Declined by the user' ? r.error : null
 }
 
 /** Whether a task can be built from here: internal tasks, or a remote one whose project's task_system is that provider. */
