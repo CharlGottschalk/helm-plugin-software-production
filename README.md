@@ -34,3 +34,7 @@ helm plugin link .   # then review, approve and enable in Settings → Plugins
 ```
 
 `dist/` is committed: Helm installs plugins without running scripts.
+
+## License
+
+Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
