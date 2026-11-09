@@ -1,5 +1,6 @@
 // One task shape for every source, and the adapters that produce it.
 // A task: { id, projectId, title, status, priority?, dependencies: string[], blocked?, link? }
+// Internal tasks also carry { path, text, sha256 } so a move can rewrite the file (hash-checked).
 // Helm only hands back file text (files connections); this plugin owns the parsing.
 
 export const STACK = '.tdt-project/tdt-software-production'
@@ -60,7 +61,8 @@ const internal = {
     const tasks = []
     for (let i = 0; i < paths.length; i += BATCH) {
       const read = unwrap(await helm.call('sp', 'read', { project: projectId, paths: paths.slice(i, i + BATCH) }), 'Reading tasks')
-      for (const f of read.files) if (f.text !== undefined) tasks.push(parseTask(f.path.split('/').pop().replace(/\.md$/, ''), projectId, f.text))
+      for (const f of read.files)
+        if (f.text !== undefined) tasks.push({ ...parseTask(f.path.split('/').pop().replace(/\.md$/, ''), projectId, f.text), path: f.path, text: f.text, sha256: f.sha256 })
     }
     return tasks
   },
@@ -150,6 +152,49 @@ export async function readHandoff(helm, projectId, taskId) {
   const r = await helm.call('handoffs', 'read', { path: `.tdt/state/software-production/${projectId}/tasks/${taskId}.md` })
   if (!r.ok && r.error?.code === 'not_found') return null
   return unwrap(r, 'Reading the handoff').text
+}
+
+/* ── moves (internal tasks) ── */
+
+/** Task files the manifest's `tasks` connection may write. */
+const WRITABLE = new RegExp(`^${STACK.replace(/[.]/g, '\\.')}/tasks/[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}\\.md$`)
+
+/** The task text with only its first `Status:` line changed, or null when it has none. */
+export function setStatus(text, status) {
+  const line = /^Status:[ \t]*.*$/m
+  return line.test(text) ? text.replace(line, `Status: ${status}`) : null
+}
+
+/**
+ * What moving `t` to column `to` does:
+ * none · refused { reason } · close { prompt } (Done/Cancelled: the close skill, no write) ·
+ * write { args } (Draft/Ready/Blocked: the Status line) · doing { args } (Helm's build-or-move dialog).
+ */
+export function planMove(t, to, projectName) {
+  if (!STATUSES.includes(to) || to === t.status) return { kind: 'none' }
+  if (to === 'done' || to === 'cancelled')
+    return { kind: 'close', prompt: `/tdt-software-production-close ${t.id} in ${projectName}${to === 'cancelled' ? ' as cancelled' : ''}` }
+  if (!t.path || !t.sha256) return { kind: 'refused', reason: `${t.id} can’t be moved from here: only internal tasks are written by this board.` }
+  if (!WRITABLE.test(t.path)) return { kind: 'refused', reason: `${t.id} lives outside ${STACK}/tasks/, which is the only folder this board writes.` }
+  const text = setStatus(t.text, to)
+  if (text === null) return { kind: 'refused', reason: `${t.id} has no “Status:” line to change.` }
+  const args = { project: t.projectId, path: t.path, text, expected_sha256: t.sha256 }
+  return { kind: to === 'doing' ? 'doing' : 'write', args }
+}
+
+/**
+ * How a move ended, from a files write result or a build-or-move result:
+ * { status: 'moved' | 'building' | 'reverted', sha256?, message?, reload? }.
+ */
+export function moveOutcome(r, t) {
+  if (r?.choice === 'build') return r.ok ? { status: 'building' } : { status: 'reverted', message: r.error ?? 'The build did not start.' }
+  if (r?.choice === 'cancel') return { status: 'reverted' }
+  const w = r?.write ?? r // Helm returns the write's result in `write`, also when confirming it was refused
+  if (w?.ok) return { status: 'moved', sha256: w.data?.sha256 }
+  const code = w?.error?.code
+  if (code === 'declined') return { status: 'reverted' }
+  if (code === 'conflict') return { status: 'reverted', reload: true, message: `${t.id} changed since the board read it, so nothing was written. Reloaded it; try the move again.` }
+  return { status: 'reverted', message: w?.error?.message ?? r?.error ?? 'The move failed.' }
 }
 
 /* ── sessions ── */

@@ -3,7 +3,8 @@
 A [Helm](../helm) plugin for [tdt-software-production](https://usetdt.com) tasks:
 
 - **Kanban** (tool): one project's tasks by status, Build on ready cards, the build
-  skill's handoff on cards in progress.
+  skill's handoff on cards in progress. Drag a card, or use its Move menu, to change an
+  internal task's status (below).
 - **Ready tasks** (widget): ready or done tasks across linked projects, by priority.
 - **Task pipeline** (widget): counts per status, Build on the first ready tasks.
 
@@ -19,10 +20,23 @@ GitHub show "needs 023" until their adapters exist.
 | --- | --- | --- |
 | `tdt` | tdt-mcp | `tdt_project_list` |
 | `sp` | files (project) | list, read `.tdt-project/tdt-software-production/**` |
+| `tasks` | files (project) | read, **write** `.tdt-project/tdt-software-production/tasks/*.md` (Kanban only) |
 | `handoffs` | files (workspace) | read `.tdt/state/software-production/*/tasks/*.md` (Kanban only) |
 
 Kanban and Task pipeline declare `orchestrate`; Helm asks you to confirm every build, and
-the build skill rereads the task and refuses work that isn't ready.
+the build skill rereads the task and refuses work that isn't ready. Kanban also declares
+`chat` and `permissions.write`.
+
+### Moving cards (Kanban, internal tasks)
+
+- Draft, Ready and Blocked: Helm confirms a write that changes only the task's `Status:` line.
+- Doing: one Helm dialog offers **Move and start build** (starts the build; the build skill
+  sets `doing`, nothing is written here) or **Move only** (writes `Status: doing`).
+- Done or Cancelled: no write; a confirmed hand-off runs `/tdt-software-production-close`.
+- A task file changed since the board read it is refused (`conflict`), the board reloads,
+  and nothing is overwritten. Cancelled or failed moves put the card back.
+- Only files under `.tdt-project/tdt-software-production/tasks/` move; external sources
+  (Linear, GitHub) follow in task 026.
 
 ## Develop
 

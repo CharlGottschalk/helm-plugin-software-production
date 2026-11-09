@@ -3,7 +3,7 @@
   "id": "kanban",
   "name": "Kanban",
   "version": "0.1.0",
-  "description": "Software-production tasks by status. Start builds from ready cards.",
+  "description": "Software-production tasks by status. Start builds from ready cards; move cards to change a task's status.",
   "icon": "grid",
   "multi": true,
   "settings": [
@@ -27,9 +27,10 @@
   "connections": [
     { "id": "tdt", "kind": "tdt-mcp", "operations": ["tdt_project_list"] },
     { "id": "sp", "kind": "files", "root": "project", "paths": [".tdt-project/tdt-software-production/**"], "operations": ["list", "read"] },
+    { "id": "tasks", "kind": "files", "root": "project", "paths": [".tdt-project/tdt-software-production/tasks/*.md"], "operations": ["read", "write"] },
     { "id": "handoffs", "kind": "files", "root": "workspace", "paths": [".tdt/state/software-production/*/tasks/*.md"], "operations": ["read"] }
   ],
-  "capabilities": ["orchestrate"],
-  "permissions": { "write": false },
+  "capabilities": ["orchestrate", "chat"],
+  "permissions": { "write": true },
   "entry": "index.html"
 }
