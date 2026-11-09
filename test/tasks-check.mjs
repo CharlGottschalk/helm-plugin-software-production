@@ -44,7 +44,7 @@ assert.deepEqual(calls, ['sp.read', 'sp.list', 'sp.read'], 'config, list, one ba
 const jira = { ...files, [`${SP}/config.json`]: '{"task_system":{"kind":"external","provider":"jira"}}' }
 await assert.rejects(loadProject(fake(jira), P), (e) => e.code === 'later' && /jira.*no adapter/.test(e.message))
 assert.equal((await loadProject(fake(jira), P, 'internal')).length, 2)
-await assert.rejects(loadProject(fake(files), P, 'github'), (e) => e.code === 'later' && /029/.test(e.message))
+await assert.rejects(loadProject(fake(files), P, 'github'), (e) => e.code === 'setup' && /GitHub needs a repository/.test(e.message))
 await assert.rejects(loadProject(fake(files), P, 'linear'), (e) => e.code === 'setup' && /team/.test(e.message)) // no team anywhere
 await assert.rejects(loadProject(fake({ ...files, [`${SP}/config.json`]: '{' }), P), /not valid JSON/)
 
@@ -171,3 +171,82 @@ assert.equal(moveOutcome({ ok: false, status: 401, data: null, error: { code: 'h
 const unauth = { ...linearFake(linCfg), call: async (c, o, a) => (c === 'linear' ? { ok: false, status: 401, data: { errors: [{ message: 'Authentication required' }] }, error: { code: 'http_error', message: 'The service answered HTTP 401' } } : fake({ ...files, [`${SP}/config.json`]: JSON.stringify(linCfg) }).call(c, o, a)) }
 await assert.rejects(loadProject(unauth, P), (e) => e.code === 'error' && /HTTP 401 \(Authentication required\)/.test(e.message))
 console.log('linear-check ok')
+
+// task 029: the GitHub adapter (GraphQL over the `github` http connection)
+{
+  const { canBuild, githubId, githubRef } = await import('../src/shared/tasks.js')
+  assert.deepEqual(githubRef('me/app'), { mode: 'issues', owner: 'me', repo: 'app' })
+  assert.deepEqual(githubRef('org/projects/7'), { mode: 'project', owner: 'org', number: 7 })
+  for (const bad of ['me', 'me/app/x', '-me/app', 'me/..', 'org/projects/0', 'a b/c']) assert.equal(githubRef(bad), null, bad)
+  assert.equal(githubId('my.lib', 12), 'my-lib-12')
+  assert.match(githubId('x'.repeat(100), 1), /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/)
+
+  const OPTIONS = [{ id: 'o-todo', name: 'Todo' }, { id: 'o-prog', name: 'In progress' }, { id: 'o-blk', name: 'Blocked' }, { id: 'o-done', name: 'Done' }, { id: 'o-ice', name: 'Icebox' }]
+  const item = (n, opt, type = 'ISSUE') => ({ id: `item-${n}`, type, content: type === 'ISSUE' ? { number: n, title: `Issue ${n}`, url: `https://github.com/me/app/issues/${n}`, repository: { name: n > 10 ? 'lib' : 'app' } } : { title: 'pr' }, fieldValueByName: opt ? { name: opt } : null })
+  const ghFake = (config, { profile = true, gqlError, noField, missing } = {}) => {
+    const seen = []
+    const base = fake({ ...files, [`${SP}/config.json`]: JSON.stringify(config) })
+    return {
+      seen,
+      call: async (c, o, a) => {
+        if (c !== 'github') return base.call(c, o, a)
+        seen.push([o, a])
+        if (!profile) return { ok: false, status: null, data: null, error: { code: 'not_configured', message: 'No service profile "github"' } }
+        if (gqlError) return { ok: true, status: 200, data: { data: null, errors: [{ type: 'NOT_FOUND', message: gqlError }] } }
+        if (o === 'issues') {
+          if (missing) return { ok: true, status: 200, data: { data: { repository: null } } }
+          const issues = a.after === 'c1'
+            ? { nodes: [{ number: 3, title: 'Three', url: 'u3', state: 'CLOSED', stateReason: 'NOT_PLANNED' }], pageInfo: { hasNextPage: false, endCursor: null } }
+            : { nodes: [{ number: 1, title: 'One', url: 'u1', state: 'OPEN', stateReason: null }, { number: 2, title: 'Two', url: 'u2', state: 'CLOSED', stateReason: 'COMPLETED' }], pageInfo: { hasNextPage: true, endCursor: 'c1' } }
+          return { ok: true, status: 200, data: { data: { repository: { issues } } } }
+        }
+        const items = a.after === 'c1'
+          ? { nodes: [item(11, 'Done'), item(0, null, 'DRAFT_ISSUE')], pageInfo: { hasNextPage: false, endCursor: null } }
+          : { nodes: [item(1, 'Todo'), item(2, 'Blocked'), item(3, 'Icebox'), item(4, null), item(0, null, 'PULL_REQUEST')], pageInfo: { hasNextPage: true, endCursor: 'c1' } }
+        return { ok: true, status: 200, data: { data: { repositoryOwner: { projectV2: { id: 'proj-1', field: noField ? {} : { id: 'fld-1', options: OPTIONS }, items } } } } }
+      },
+    }
+  }
+  // issues mode: open → ready, closed → done / cancelled; two pages; read-only lanes
+  const issCfg = { task_system: { kind: 'external', provider: 'github', project_ref: 'me/app' } }
+  const gi = ghFake(issCfg)
+  const iss = await loadProject(gi, P)
+  assert.deepEqual(iss.map((x) => `${x.id}:${x.status}`), ['app-1:ready', 'app-2:done', 'app-3:cancelled'])
+  assert.deepEqual(gi.seen.map(([o, a]) => `${o}:${a.owner}/${a.repo}:${a.after ?? ''}`), ['issues:me/app:', 'issues:me/app:c1'])
+  assert.ok(canBuild(iss[0]))
+  for (const to of ['draft', 'blocked', 'doing']) assert.match(planMove(iss[0], to, 'helm').reason, /Projects v2/, to)
+  assert.equal(planMove(iss[0], 'done', 'helm').kind, 'close')
+  assert.equal(planMove(iss[1], 'cancelled', 'helm').kind, 'close')
+
+  // Projects v2 mode: issue items only, PRs/drafts counted; lanes from the status field through status_map
+  const boardCfg = { task_system: { kind: 'external', provider: 'github', project_ref: 'me/projects/7', status_field: 'Stage', status_map: { ready: 'Todo', doing: 'In Progress', blocked: 'Blocked', done: 'Done' } } }
+  const gb = ghFake(boardCfg)
+  const board = await loadProject(gb, P)
+  assert.deepEqual(board.map((x) => `${x.id}:${x.status}`), ['app-1:ready', 'app-2:blocked', 'app-3:draft', 'app-4:draft', 'lib-11:done'])
+  assert.equal(board.skipped, 2)
+  assert.deepEqual(gb.seen.map(([o, a]) => `${o}:${a.owner}:${a.number}:${a.field}:${a.after ?? ''}`), ['board:me:7:Stage:', 'board:me:7:Stage:c1'])
+  const into = planMove(board[0], 'doing', 'helm')
+  assert.deepEqual([into.kind, into.connection, into.operation, into.args], ['doing', 'github', 'setStatus', { project: 'proj-1', item: 'item-1', field: 'fld-1', option: 'o-prog' }], 'case-insensitive option name')
+  assert.equal(planMove(board[0], 'blocked', 'helm').kind, 'write')
+  assert.match(planMove(board[0], 'draft', 'helm').reason, /status_map\.draft/)
+  assert.equal(planMove(board[0], 'done', 'helm').kind, 'close')
+  // default map without status_map; an override (config not GitHub) moves into Doing without a build
+  const over = await loadProject(ghFake({ task_system: { kind: 'internal' } }), P, 'github', { github: 'me/projects/7' })
+  assert.deepEqual(over.map((x) => x.status), ['ready', 'draft', 'draft', 'draft', 'done'])
+  assert.equal(canBuild(over[0]), false)
+  assert.equal(planMove(over[0], 'doing', 'helm').kind, 'write')
+  // errors: no profile/ref/field → setup; GraphQL errors, unknown repo and 401 → error
+  await assert.rejects(loadProject(ghFake(issCfg, { profile: false }), P), (e) => e.code === 'setup' && /service profile named “github”/.test(e.message))
+  await assert.rejects(loadProject(ghFake({ task_system: { kind: 'internal' } }), P, 'github'), (e) => e.code === 'setup' && /owner\/repo/.test(e.message))
+  await assert.rejects(loadProject(ghFake({ task_system: { ...issCfg.task_system, project_ref: 'nope' } }), P), (e) => e.code === 'setup')
+  await assert.rejects(loadProject(ghFake(boardCfg, { noField: true }), P), (e) => e.code === 'setup' && /“Stage”/.test(e.message))
+  await assert.rejects(loadProject(ghFake(issCfg, { gqlError: "Could not resolve to a Repository with the name 'me/app'." }), P), (e) => e.code === 'error' && /Could not resolve/.test(e.message))
+  await assert.rejects(loadProject(ghFake(issCfg, { missing: true }), P), (e) => e.code === 'error' && /no repository me\/app/.test(e.message))
+  const unauth = { call: async (c, o, a) => (c === 'github' ? { ok: false, status: 401, data: { message: 'Bad credentials' }, error: { code: 'http_error', message: 'The service answered HTTP 401' } } : fake({ ...files, [`${SP}/config.json`]: JSON.stringify(issCfg) }).call(c, o, a)) }
+  await assert.rejects(loadProject(unauth, P), (e) => e.code === 'error' && /HTTP 401 \(Bad credentials\)/.test(e.message))
+  // outcomes: the mutation's item back → moved; GraphQL error or no item → reverted with GitHub's reason
+  assert.equal(moveOutcome({ ok: true, status: 200, data: { data: { updateProjectV2ItemFieldValue: { projectV2Item: { id: 'item-1' } } } } }, board[0]).status, 'moved')
+  assert.match(moveOutcome({ ok: true, choice: 'write', write: { ok: true, status: 200, data: { errors: [{ message: 'Resource not accessible by integration' }] } } }, board[0]).message, /^GitHub refused the move: Resource not accessible/)
+  assert.equal(moveOutcome({ ok: true, status: 200, data: { data: { updateProjectV2ItemFieldValue: null } } }, board[0]).status, 'reverted')
+}
+console.log('github-check ok')

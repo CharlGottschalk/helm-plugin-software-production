@@ -1,6 +1,6 @@
 // Task pipeline widget: counts per lifecycle status, with Build on the first ready tasks.
 import { getHelm } from '@usetdt/helm-sdk/frame'
-import { STATUSES, endedBuilds, errorLine, listProjects, loadAll, loadProject, sessionFor } from '../shared/tasks.js'
+import { STATUSES, canBuild, endedBuilds, errorLine, listProjects, loadAll, loadProject, sessionFor } from '../shared/tasks.js'
 import { STATUS_LABELS, STATUS_TONES, badge, button, dot, el, meter, state, styles, fill } from '../shared/ui.js'
 
 const helm = getHelm()
@@ -70,7 +70,7 @@ function render() {
         el('span', { class: 'sp-id' }, t.id),
         el('div', { class: 'sp-task-body' }, el('span', { class: 'sp-title' }, t.title),
           el('span', { class: 'sp-task-meta' }, p && !project && el('span', { class: 'sp-small' }, p.code),
-            sessionFor(sessions, t) ? badge('amber', 'building') : (!t.linear || t.linear.buildable) && button('⚡ Build', () => build(t)))))
+            sessionFor(sessions, t) ? badge('amber', 'building') : canBuild(t) && button('⚡ Build', () => build(t)))))
     })),
   )
 }

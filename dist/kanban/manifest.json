@@ -3,7 +3,7 @@
   "id": "kanban",
   "name": "Kanban",
   "version": "0.1.0",
-  "description": "Software-production tasks by status, from internal task files or Linear. Start builds from ready cards; move cards to change a task's status.",
+  "description": "Software-production tasks by status, from internal task files, Linear or GitHub. Start builds from ready cards; move cards to change a task's status.",
   "icon": "grid",
   "multi": true,
   "settings": [
@@ -72,7 +72,7 @@
         },
         {
           "value": "github",
-          "label": "GitHub (coming in 029)"
+          "label": "GitHub"
         }
       ]
     },
@@ -84,6 +84,15 @@
       "maxLength": 16,
       "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,15}$",
       "help": "The Linear team key, used when the source is Linear and config.json's task_system names no project_ref."
+    },
+    {
+      "id": "githubRef",
+      "type": "text",
+      "label": "GitHub repository or board",
+      "placeholder": "owner/repo or owner/projects/1",
+      "maxLength": 160,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9-]{0,38}/(projects/[1-9][0-9]{0,8}|[A-Za-z0-9._-]{1,100})$",
+      "help": "Used when the source is GitHub and config.json's task_system names no project_ref. A repository shows its issues read-only by open/closed; a Projects v2 board shows its issue items by status, and cards move."
     }
   ],
   "connections": [
@@ -163,6 +172,52 @@
             "variables": {
               "issue": "{issue}",
               "state": "{state}"
+            }
+          },
+          "write": true
+        }
+      }
+    },
+    {
+      "id": "github",
+      "kind": "http",
+      "service": "github",
+      "calls": {
+        "issues": {
+          "method": "POST",
+          "path": "/graphql",
+          "body": {
+            "query": "query($owner: String!, $repo: String!, $after: String) { repository(owner: $owner, name: $repo) { issues(first: 100, after: $after, orderBy: { field: CREATED_AT, direction: ASC }) { nodes { number title url state stateReason } pageInfo { hasNextPage endCursor } } } }",
+            "variables": {
+              "owner": "{owner}",
+              "repo": "{repo}",
+              "after": "{after}"
+            }
+          }
+        },
+        "board": {
+          "method": "POST",
+          "path": "/graphql",
+          "body": {
+            "query": "query($owner: String!, $number: Int!, $field: String!, $after: String) { repositoryOwner(login: $owner) { ... on ProjectV2Owner { projectV2(number: $number) { id field(name: $field) { ... on ProjectV2SingleSelectField { id options { id name } } } items(first: 100, after: $after) { nodes { id type content { ... on Issue { number title url repository { name } } } fieldValueByName(name: $field) { ... on ProjectV2ItemFieldSingleSelectValue { name } } } pageInfo { hasNextPage endCursor } } } } } }",
+            "variables": {
+              "owner": "{owner}",
+              "number": "{number}",
+              "field": "{field}",
+              "after": "{after}"
+            }
+          }
+        },
+        "setStatus": {
+          "method": "POST",
+          "path": "/graphql",
+          "body": {
+            "query": "mutation($project: ID!, $item: ID!, $field: ID!, $option: String!) { updateProjectV2ItemFieldValue(input: { projectId: $project, itemId: $item, fieldId: $field, value: { singleSelectOptionId: $option } }) { projectV2Item { id } } }",
+            "variables": {
+              "project": "{project}",
+              "item": "{item}",
+              "field": "{field}",
+              "option": "{option}"
             }
           },
           "write": true

@@ -11,9 +11,9 @@ A [Helm](../helm) plugin for [tdt-software-production](https://usetdt.com) tasks
 All three share one task shape (`id, projectId, title, status, priority, dependencies,
 blocked, link`) and one adapter layer (`src/shared/tasks.js`). The internal adapter reads
 `.tdt-project/tdt-software-production/` through a `files` connection; the Linear adapter
-reads a team's issues over GraphQL through an `http` connection. The source follows the
-project's `task_system` config unless an instance overrides it. GitHub shows "coming in
-029" until its adapter exists; other trackers wait for demand.
+reads a team's issues and the GitHub adapter a repository's issues or a Projects v2 board,
+both over GraphQL through an `http` connection. The source follows the project's
+`task_system` config unless an instance overrides it; other trackers wait for demand.
 
 ### Linear
 
@@ -34,6 +34,35 @@ project's `task_system` config unless an instance overrides it. GitHub shows "co
    Without that config, set an instance's source to Linear and its **Linear team** setting
    (Kanban only); such a board moves cards but never offers a build.
 
+### GitHub
+
+1. In Helm, Settings → Connections → Services: add a profile named `github`, base URL
+   `https://api.github.com`, header `Authorization`, sent as `Bearer` (a fine-grained token
+   with Issues read, plus Projects read and write to move board cards; or a classic token
+   with `repo`/`read:project`, `project` to move).
+2. In the project's `config.json`, `project_ref` picks the mode:
+
+   ```json
+   "task_system": { "kind": "external", "provider": "github", "project_ref": "me/app" }
+   ```
+
+   `owner/repo` shows the repository's issues read-only: open → ready, closed → done, or
+   cancelled when closed as not planned. `owner/projects/<number>` shows a user or
+   organization Projects v2 board's issue items (pull requests and draft issues are skipped
+   and counted in the board header) by its single-select `Status` field:
+
+   ```json
+   "task_system": { "kind": "external", "provider": "github", "project_ref": "me/projects/3",
+     "status_field": "Status",
+     "status_map": { "ready": "Todo", "doing": "In Progress", "blocked": "Blocked", "done": "Done" } }
+   ```
+
+   `status_map` names a board option per status (case-insensitive); options it doesn't name,
+   and items with no status, read as draft. Without a `status_map` the board's defaults apply
+   (Todo → ready, In Progress → doing, Done → done). Task ids are `<repo>-<number>`.
+   Without that config, set an instance's source to GitHub and its **GitHub repository or
+   board** setting (Kanban only); such a board moves cards but never offers a build.
+
 ## Declarations
 
 | Connection | Kind | Allows |
@@ -43,6 +72,7 @@ project's `task_system` config unless an instance overrides it. GitHub shows "co
 | `tasks` | files (project) | read, **write** `.tdt-project/tdt-software-production/tasks/*.md` (Kanban only) |
 | `handoffs` | files (workspace) | read `.tdt/state/software-production/*/tasks/*.md` (Kanban only) |
 | `linear` | http (service `linear`) | POST `/graphql`: `issues`, `states`; **write** `setState` (`issueUpdate` stateId, Kanban only) |
+| `github` | http (service `github`) | POST `/graphql`: `issues`, `board`; **write** `setStatus` (`updateProjectV2ItemFieldValue` single-select option, Kanban only) |
 
 Kanban and Task pipeline declare `orchestrate`; Helm asks you to confirm every build, and
 the build skill rereads the task and refuses work that isn't ready. Kanban also declares
@@ -62,6 +92,9 @@ the build skill rereads the task and refuses work that isn't ready. Kanban also 
   when the project's `task_system` is Linear; otherwise it is a plain confirmed move. A
   declined or failed request (including a GraphQL error) puts the card back with the error.
   Done and Cancelled hand off to the close skill as for internal tasks.
+- GitHub board cards: the same, with one confirmed `updateProjectV2ItemFieldValue` that
+  sets only that item's status field. Plain repository issues don't move: Done and
+  Cancelled hand off to the close skill, other moves are refused with a pointer to Projects v2.
 
 ## Develop
 

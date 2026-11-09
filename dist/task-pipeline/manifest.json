@@ -55,7 +55,7 @@
         },
         {
           "value": "github",
-          "label": "GitHub (coming in 029)"
+          "label": "GitHub"
         }
       ]
     }
@@ -103,6 +103,38 @@
             "query": "query($team: String!) { workflowStates(first: 100, filter: { team: { key: { eq: $team } } }) { nodes { id name type position } } }",
             "variables": {
               "team": "{team}"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "github",
+      "kind": "http",
+      "service": "github",
+      "calls": {
+        "issues": {
+          "method": "POST",
+          "path": "/graphql",
+          "body": {
+            "query": "query($owner: String!, $repo: String!, $after: String) { repository(owner: $owner, name: $repo) { issues(first: 100, after: $after, orderBy: { field: CREATED_AT, direction: ASC }) { nodes { number title url state stateReason } pageInfo { hasNextPage endCursor } } } }",
+            "variables": {
+              "owner": "{owner}",
+              "repo": "{repo}",
+              "after": "{after}"
+            }
+          }
+        },
+        "board": {
+          "method": "POST",
+          "path": "/graphql",
+          "body": {
+            "query": "query($owner: String!, $number: Int!, $field: String!, $after: String) { repositoryOwner(login: $owner) { ... on ProjectV2Owner { projectV2(number: $number) { id field(name: $field) { ... on ProjectV2SingleSelectField { id options { id name } } } items(first: 100, after: $after) { nodes { id type content { ... on Issue { number title url repository { name } } } fieldValueByName(name: $field) { ... on ProjectV2ItemFieldSingleSelectValue { name } } } pageInfo { hasNextPage endCursor } } } } } }",
+            "variables": {
+              "owner": "{owner}",
+              "number": "{number}",
+              "field": "{field}",
+              "after": "{after}"
             }
           }
         }
