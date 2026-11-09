@@ -1,7 +1,8 @@
 // One task shape for every source, and the adapters that produce it.
 // A task: { id, projectId, title, status, priority?, dependencies: string[], blocked?, link? }
 // Internal tasks also carry { path, text, sha256 } so a move can rewrite the file (hash-checked).
-// Helm only hands back file text (files connections); this plugin owns the parsing.
+// Linear tasks carry `linear`: { issue, states, statusMap, buildable } so a move can set the issue's state.
+// Helm only hands back file text and JSON (files and http connections); this plugin owns the parsing.
 
 export const STACK = '.tdt-project/tdt-software-production'
 export const STATUSES = ['draft', 'ready', 'doing', 'blocked', 'done', 'cancelled']
@@ -68,26 +69,84 @@ const internal = {
   },
 }
 
-/** Sources whose adapter ships with task 023. */
-const later = (label) => ({ label, later: true })
+/* Linear (task 026): GraphQL over the manifest's `linear` http connection (a Helm service profile). */
 
-export const ADAPTERS = { internal, jira: later('Jira'), linear: later('Linear'), github: later('GitHub') }
+/** Lifecycle status for each Linear workflow state type, used when status_map does not name the state. */
+const LINEAR_TYPES = { triage: 'draft', backlog: 'draft', unstarted: 'ready', started: 'doing', completed: 'done', canceled: 'cancelled' }
+const LINEAR_PRIORITY = { 1: 'high', 2: 'high', 3: 'medium', 4: 'low' }
+const TEAM_KEY = /^[A-Za-z0-9][A-Za-z0-9_-]{0,15}$/
+const PAGES = 10 // ponytail: at most 1000 issues per team; filter by state server-side if a team outgrows it
+
+/** A Linear state's lifecycle status: the status_map entry naming it (case-insensitive), else its type. */
+export function linearStatus(state, statusMap = {}) {
+  const name = String(state?.name ?? '').toLowerCase()
+  const mapped = STATUSES.find((st) => typeof statusMap[st] === 'string' && statusMap[st].toLowerCase() === name)
+  return mapped ?? LINEAR_TYPES[state?.type] ?? 'draft'
+}
+
+/** The workflow state a move to `to` sets: the one status_map names, else the first (by position) of the matching type. */
+export function linearTarget(states, to, statusMap = {}) {
+  const want = statusMap[to]
+  if (typeof want === 'string') return states.find((x) => x.name.toLowerCase() === want.toLowerCase()) ?? null
+  return states.filter((x) => LINEAR_TYPES[x.type] === to).sort((a, b) => a.position - b.position)[0] ?? null
+}
+
+/** GraphQL data from an http result, or a SourceError: "setup" when Helm has no `linear` profile. */
+function gql(r, what) {
+  if (r?.error?.code === 'not_configured')
+    throw new SourceError('Linear is not set up: add a service profile named “linear” in Helm (Settings → Connections → Services, base URL https://api.linear.app, your API key).', 'setup')
+  const said = r?.data?.errors?.[0]?.message // Linear's own reason, also on a 401
+  if (!r?.ok) throw new SourceError(`${what}: ${r?.error?.message ?? 'no answer'}${said ? ` (${said})` : ''}`)
+  if (r.data?.errors?.length) throw new SourceError(`${what}: ${r.data.errors[0].message ?? 'Linear returned an error'}`)
+  return r.data?.data
+}
+
+const linear = {
+  label: 'Linear',
+  async list(helm, projectId, system, opts = {}) {
+    const team = typeof system.project_ref === 'string' && system.project_ref ? system.project_ref : opts.team
+    if (!team) throw new SourceError('Linear needs a team: set task_system.project_ref in config.json (the team key, such as ENG), or the Linear team setting.', 'setup')
+    if (!TEAM_KEY.test(team)) throw new SourceError(`“${team}” is not a Linear team key.`, 'setup')
+    const statusMap = system.status_map && typeof system.status_map === 'object' ? system.status_map : {}
+    const states = gql(await helm.call('linear', 'states', { team }), 'Reading Linear states').workflowStates.nodes
+    const source = { states, statusMap, buildable: String(system.provider ?? '').toLowerCase() === 'linear' }
+    const tasks = []
+    let after = null
+    for (let page = 0; page < PAGES; page++) {
+      const { nodes, pageInfo } = gql(await helm.call('linear', 'issues', { team, after }), 'Reading Linear issues').issues
+      for (const i of nodes)
+        tasks.push({
+          id: i.identifier, projectId, title: i.title, status: linearStatus(i.state, statusMap),
+          priority: LINEAR_PRIORITY[i.priority], dependencies: [], link: i.url,
+          linear: { issue: i.id, ...source },
+        })
+      if (!pageInfo?.hasNextPage) break
+      after = pageInfo.endCursor
+    }
+    return tasks
+  },
+}
+
+/** Sources whose adapter has not landed yet. */
+const later = (label, task) => ({ label, later: true, task })
+
+export const ADAPTERS = { internal, linear, github: later('GitHub', '029') }
 
 /** Source override setting values, in the order the setting lists them. */
 export const SOURCE_OPTIONS = [
   { value: 'config', label: 'Project config (task_system)' },
   { value: 'internal', label: 'Internal tasks' },
-  { value: 'jira', label: 'Jira (needs 023)' },
-  { value: 'linear', label: 'Linear (needs 023)' },
-  { value: 'github', label: 'GitHub (needs 023)' },
+  { value: 'linear', label: 'Linear' },
+  { value: 'github', label: 'GitHub (coming in 029)' },
 ]
 
 /**
  * A project's tasks from its source: the project's task_system config, unless the
- * instance overrides it. Throws SourceError: code "nosetup" when the project has no
- * software-production config, "later" when its source has no adapter yet.
+ * instance overrides it (`opts.team`: the Linear team when config names none). Throws SourceError:
+ * code "nosetup" when the project has no software-production config, "later" when its source has
+ * no adapter yet, "setup" when its source needs setting up.
  */
-export async function loadProject(helm, projectId, override = 'config') {
+export async function loadProject(helm, projectId, override = 'config', opts = {}) {
   const cfg = await helm.call('sp', 'read', { project: projectId, path: `${STACK}/config.json` })
   if (!cfg.ok && cfg.error?.code === 'not_found')
     throw new SourceError('This project has no software-production setup (.tdt-project/tdt-software-production/config.json).', 'nosetup')
@@ -103,8 +162,8 @@ export async function loadProject(helm, projectId, override = 'config') {
   const kind = override && override !== 'config' ? override : configured
   const adapter = ADAPTERS[kind]
   if (!adapter || adapter.later)
-    throw new SourceError(`Tasks live in ${adapter?.label ?? system.provider ?? kind}. This plugin reads them once task 023 adds that adapter.`, 'later')
-  return adapter.list(helm, projectId, kind === configured ? system : {})
+    throw new SourceError(`Tasks live in ${adapter?.label ?? system.provider ?? kind}. This plugin ${adapter?.task ? `reads them once task ${adapter.task} lands` : 'has no adapter for it'}.`, 'later')
+  return adapter.list(helm, projectId, kind === configured ? system : {}, opts)
 }
 
 /** Registered projects as { id, name, code, availability } (name and code as Helm shows them). */
@@ -139,10 +198,11 @@ export async function loadAll(helm, projects, override = 'config') {
   return { tasks, errors }
 }
 
-/** One line about per-project errors: a source that needs 023 says so, anything else is counted. */
+/** One line about per-project errors: an unsupported or unset-up source says so, anything else is counted. */
 export function errorLine(errors) {
-  const later = [...new Set(errors.filter((e) => e.code === 'later').map((e) => e.message))]
-  const other = errors.length - errors.filter((e) => e.code === 'later').length
+  const said = errors.filter((e) => e.code === 'later' || e.code === 'setup')
+  const later = [...new Set(said.map((e) => e.message))]
+  const other = errors.length - said.length
   return [...later, other ? `${other} project${other > 1 ? 's' : ''} could not be read.` : ''].filter(Boolean).join(' ')
 }
 
@@ -168,18 +228,26 @@ export function setStatus(text, status) {
 /**
  * What moving `t` to column `to` does:
  * none · refused { reason } · close { prompt } (Done/Cancelled: the close skill, no write) ·
- * write { args } (Draft/Ready/Blocked: the Status line) · doing { args } (Helm's build-or-move dialog).
+ * write { connection, operation, args } (a confirmed write: the Status line, or the Linear issue's state) ·
+ * doing { connection, operation, args } (Helm's build-or-move dialog; a plain write when the task can't be built).
  */
 export function planMove(t, to, projectName) {
   if (!STATUSES.includes(to) || to === t.status) return { kind: 'none' }
   if (to === 'done' || to === 'cancelled')
     return { kind: 'close', prompt: `/tdt-software-production-close ${t.id} in ${projectName}${to === 'cancelled' ? ' as cancelled' : ''}` }
-  if (!t.path || !t.sha256) return { kind: 'refused', reason: `${t.id} can’t be moved from here: only internal tasks are written by this board.` }
+  if (t.linear) {
+    const state = linearTarget(t.linear.states, to, t.linear.statusMap)
+    if (!state) return { kind: 'refused', reason: `${t.id} can’t move to ${to}: no Linear state matches. Name one in task_system.status_map.${to}.` }
+    // into Doing offers the build only when the project's task_system is Linear (the build skill reads it there)
+    const kind = to === 'doing' && t.linear.buildable ? 'doing' : 'write'
+    return { kind, connection: 'linear', operation: 'setState', args: { issue: t.linear.issue, state: state.id }, state }
+  }
+  if (!t.path || !t.sha256) return { kind: 'refused', reason: `${t.id} can’t be moved from here: this board writes internal and Linear tasks only.` }
   if (!WRITABLE.test(t.path)) return { kind: 'refused', reason: `${t.id} lives outside ${STACK}/tasks/, which is the only folder this board writes.` }
   const text = setStatus(t.text, to)
   if (text === null) return { kind: 'refused', reason: `${t.id} has no “Status:” line to change.` }
   const args = { project: t.projectId, path: t.path, text, expected_sha256: t.sha256 }
-  return { kind: to === 'doing' ? 'doing' : 'write', args }
+  return { kind: to === 'doing' ? 'doing' : 'write', connection: 'tasks', operation: 'write', args }
 }
 
 /**
@@ -190,6 +258,9 @@ export function moveOutcome(r, t) {
   if (r?.choice === 'build') return r.ok ? { status: 'building' } : { status: 'reverted', message: r.error ?? 'The build did not start.' }
   if (r?.choice === 'cancel') return { status: 'reverted' }
   const w = r?.write ?? r // Helm returns the write's result in `write`, also when confirming it was refused
+  // Linear answers GraphQL errors with HTTP 200
+  if (w?.ok && w.data?.errors?.length) return { status: 'reverted', message: `Linear refused the move: ${w.data.errors[0].message ?? 'error'}` }
+  if (w?.ok && w.data?.data?.issueUpdate && !w.data.data.issueUpdate.success) return { status: 'reverted', message: 'Linear did not update the issue.' }
   if (w?.ok) return { status: 'moved', sha256: w.data?.sha256 }
   const code = w?.error?.code
   if (code === 'declined') return { status: 'reverted' }

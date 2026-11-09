@@ -21,11 +21,11 @@ async function load() {
     const projects = await listProjects(helm)
     let all
     if (settings.projectId) {
-      // one project: its own errors (no setup, source needs 023) are worth showing
+      // one project: its own errors (no setup, unsupported or unset-up source) are worth showing
       try {
         all = { tasks: await loadProject(helm, settings.projectId, settings.source), errors: [] }
       } catch (e) {
-        if (e.code !== 'nosetup' && e.code !== 'later') throw e
+        if (e.code !== 'nosetup' && e.code !== 'later' && e.code !== 'setup') throw e
         all = { tasks: [], errors: [], note: e.message }
       }
     } else all = await loadAll(helm, projects, settings.source)
@@ -70,7 +70,7 @@ function render() {
         el('span', { class: 'sp-id' }, t.id),
         el('div', { class: 'sp-task-body' }, el('span', { class: 'sp-title' }, t.title),
           el('span', { class: 'sp-task-meta' }, p && !project && el('span', { class: 'sp-small' }, p.code),
-            sessionFor(sessions, t) ? badge('amber', 'building') : button('⚡ Build', () => build(t)))))
+            sessionFor(sessions, t) ? badge('amber', 'building') : (!t.linear || t.linear.buildable) && button('⚡ Build', () => build(t)))))
     })),
   )
 }

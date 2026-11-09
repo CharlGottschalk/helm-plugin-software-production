@@ -3,7 +3,7 @@
   "id": "kanban",
   "name": "Kanban",
   "version": "0.1.0",
-  "description": "Software-production tasks by status. Start builds from ready cards; move cards to change a task's status.",
+  "description": "Software-production tasks by status, from internal task files or Linear. Start builds from ready cards; move cards to change a task's status.",
   "icon": "grid",
   "multi": true,
   "settings": [
@@ -67,18 +67,23 @@
           "label": "Internal tasks"
         },
         {
-          "value": "jira",
-          "label": "Jira (needs 023)"
-        },
-        {
           "value": "linear",
-          "label": "Linear (needs 023)"
+          "label": "Linear"
         },
         {
           "value": "github",
-          "label": "GitHub (needs 023)"
+          "label": "GitHub (coming in 029)"
         }
       ]
+    },
+    {
+      "id": "linearTeam",
+      "type": "text",
+      "label": "Linear team",
+      "placeholder": "ENG",
+      "maxLength": 16,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,15}$",
+      "help": "The Linear team key, used when the source is Linear and config.json's task_system names no project_ref."
     }
   ],
   "connections": [
@@ -123,6 +128,46 @@
       "operations": [
         "read"
       ]
+    },
+    {
+      "id": "linear",
+      "kind": "http",
+      "service": "linear",
+      "calls": {
+        "issues": {
+          "method": "POST",
+          "path": "/graphql",
+          "body": {
+            "query": "query($team: String!, $after: String) { issues(first: 100, after: $after, filter: { team: { key: { eq: $team } } }) { nodes { id identifier title priority url state { id name type } } pageInfo { hasNextPage endCursor } } }",
+            "variables": {
+              "team": "{team}",
+              "after": "{after}"
+            }
+          }
+        },
+        "states": {
+          "method": "POST",
+          "path": "/graphql",
+          "body": {
+            "query": "query($team: String!) { workflowStates(first: 100, filter: { team: { key: { eq: $team } } }) { nodes { id name type position } } }",
+            "variables": {
+              "team": "{team}"
+            }
+          }
+        },
+        "setState": {
+          "method": "POST",
+          "path": "/graphql",
+          "body": {
+            "query": "mutation($issue: String!, $state: String!) { issueUpdate(id: $issue, input: { stateId: $state }) { success } }",
+            "variables": {
+              "issue": "{issue}",
+              "state": "{state}"
+            }
+          },
+          "write": true
+        }
+      }
     }
   ],
   "capabilities": [

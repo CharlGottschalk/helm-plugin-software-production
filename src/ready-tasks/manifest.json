@@ -12,11 +12,16 @@
       "options": [{ "value": "high", "label": "High" }, { "value": "medium", "label": "Medium" }, { "value": "low", "label": "Low" }], "default": ["high", "medium", "low"] },
     { "id": "limit", "type": "number", "label": "Show at most", "min": 1, "max": 50, "step": 1, "default": 10, "unit": "tasks" },
     { "id": "source", "type": "select", "label": "Task source", "default": "config",
-      "help": "Each project's config.json task_system unless you override it here.", "options": [{ "value": "config", "label": "Project config (task_system)" }, { "value": "internal", "label": "Internal tasks" }, { "value": "jira", "label": "Jira (needs 023)" }, { "value": "linear", "label": "Linear (needs 023)" }, { "value": "github", "label": "GitHub (needs 023)" }] }
+      "help": "Each project's config.json task_system unless you override it here.", "options": [{ "value": "config", "label": "Project config (task_system)" }, { "value": "internal", "label": "Internal tasks" }, { "value": "linear", "label": "Linear" }, { "value": "github", "label": "GitHub (coming in 029)" }] }
   ],
   "connections": [
     { "id": "tdt", "kind": "tdt-mcp", "operations": ["tdt_project_list"] },
-    { "id": "sp", "kind": "files", "root": "project", "paths": [".tdt-project/tdt-software-production/**"], "operations": ["list", "read"] }
+    { "id": "sp", "kind": "files", "root": "project", "paths": [".tdt-project/tdt-software-production/**"], "operations": ["list", "read"] },
+    { "id": "linear", "kind": "http", "service": "linear",
+      "calls": {
+        "issues": {"method": "POST", "path": "/graphql", "body": {"query": "query($team: String!, $after: String) { issues(first: 100, after: $after, filter: { team: { key: { eq: $team } } }) { nodes { id identifier title priority url state { id name type } } pageInfo { hasNextPage endCursor } } }", "variables": {"team": "{team}", "after": "{after}"}}},
+        "states": {"method": "POST", "path": "/graphql", "body": {"query": "query($team: String!) { workflowStates(first: 100, filter: { team: { key: { eq: $team } } }) { nodes { id name type position } } }", "variables": {"team": "{team}"}}}
+      } }
   ],
   "permissions": { "write": false },
   "entry": "index.html"

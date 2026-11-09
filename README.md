@@ -10,9 +10,29 @@ A [Helm](../helm) plugin for [tdt-software-production](https://usetdt.com) tasks
 
 All three share one task shape (`id, projectId, title, status, priority, dependencies,
 blocked, link`) and one adapter layer (`src/shared/tasks.js`). The internal adapter reads
-`.tdt-project/tdt-software-production/` through a `files` connection; the source follows
-the project's `task_system` config unless an instance overrides it. Jira, Linear and
-GitHub show "needs 023" until their adapters exist.
+`.tdt-project/tdt-software-production/` through a `files` connection; the Linear adapter
+reads a team's issues over GraphQL through an `http` connection. The source follows the
+project's `task_system` config unless an instance overrides it. GitHub shows "coming in
+029" until its adapter exists; other trackers wait for demand.
+
+### Linear
+
+1. In Helm, Settings → Connections → Services: add a profile named `linear`, base URL
+   `https://api.linear.app`, header `Authorization`, token sent as is (a Linear personal
+   API key; a read-only key is enough unless you move cards).
+2. In the project's `config.json`:
+
+   ```json
+   "task_system": { "kind": "external", "provider": "linear", "project_ref": "ENG",
+     "status_map": { "draft": "Backlog", "ready": "Todo", "doing": "In Progress",
+       "blocked": "Blocked", "done": "Done", "cancelled": "Canceled" } }
+   ```
+
+   `project_ref` is the team key. `status_map` names a workflow state per status; states it
+   doesn't name map by type (triage/backlog → draft, unstarted → ready, started → doing,
+   completed → done, canceled → cancelled), and a move to a status with no state is refused.
+   Without that config, set an instance's source to Linear and its **Linear team** setting
+   (Kanban only); such a board moves cards but never offers a build.
 
 ## Declarations
 
@@ -22,12 +42,13 @@ GitHub show "needs 023" until their adapters exist.
 | `sp` | files (project) | list, read `.tdt-project/tdt-software-production/**` |
 | `tasks` | files (project) | read, **write** `.tdt-project/tdt-software-production/tasks/*.md` (Kanban only) |
 | `handoffs` | files (workspace) | read `.tdt/state/software-production/*/tasks/*.md` (Kanban only) |
+| `linear` | http (service `linear`) | POST `/graphql`: `issues`, `states`; **write** `setState` (`issueUpdate` stateId, Kanban only) |
 
 Kanban and Task pipeline declare `orchestrate`; Helm asks you to confirm every build, and
 the build skill rereads the task and refuses work that isn't ready. Kanban also declares
 `chat` and `permissions.write`.
 
-### Moving cards (Kanban, internal tasks)
+### Moving cards (Kanban)
 
 - Draft, Ready and Blocked: Helm confirms a write that changes only the task's `Status:` line.
 - Doing: one Helm dialog offers **Move and start build** (starts the build; the build skill
@@ -35,8 +56,12 @@ the build skill rereads the task and refuses work that isn't ready. Kanban also 
 - Done or Cancelled: no write; a confirmed hand-off runs `/tdt-software-production-close`.
 - A task file changed since the board read it is refused (`conflict`), the board reloads,
   and nothing is overwritten. Cancelled or failed moves put the card back.
-- Only files under `.tdt-project/tdt-software-production/tasks/` move; external sources
-  (Linear, GitHub) follow in task 026.
+- Only files under `.tdt-project/tdt-software-production/tasks/` move.
+- Linear cards: Draft, Ready, Blocked and Doing send one confirmed `issueUpdate` that sets
+  only that issue's state (Helm shows the exact request). Into Doing offers the build only
+  when the project's `task_system` is Linear; otherwise it is a plain confirmed move. A
+  declined or failed request (including a GraphQL error) puts the card back with the error.
+  Done and Cancelled hand off to the close skill as for internal tasks.
 
 ## Develop
 

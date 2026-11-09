@@ -65,16 +65,12 @@
           "label": "Internal tasks"
         },
         {
-          "value": "jira",
-          "label": "Jira (needs 023)"
-        },
-        {
           "value": "linear",
-          "label": "Linear (needs 023)"
+          "label": "Linear"
         },
         {
           "value": "github",
-          "label": "GitHub (needs 023)"
+          "label": "GitHub (coming in 029)"
         }
       ]
     }
@@ -98,6 +94,34 @@
         "list",
         "read"
       ]
+    },
+    {
+      "id": "linear",
+      "kind": "http",
+      "service": "linear",
+      "calls": {
+        "issues": {
+          "method": "POST",
+          "path": "/graphql",
+          "body": {
+            "query": "query($team: String!, $after: String) { issues(first: 100, after: $after, filter: { team: { key: { eq: $team } } }) { nodes { id identifier title priority url state { id name type } } pageInfo { hasNextPage endCursor } } }",
+            "variables": {
+              "team": "{team}",
+              "after": "{after}"
+            }
+          }
+        },
+        "states": {
+          "method": "POST",
+          "path": "/graphql",
+          "body": {
+            "query": "query($team: String!) { workflowStates(first: 100, filter: { team: { key: { eq: $team } } }) { nodes { id name type position } } }",
+            "variables": {
+              "team": "{team}"
+            }
+          }
+        }
+      }
     }
   ],
   "permissions": {

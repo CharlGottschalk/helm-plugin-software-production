@@ -1,7 +1,8 @@
 // Kanban tool: one project's tasks by status, Build on ready cards, the build skill's
 // handoff on cards in progress (docs/tool.md). Cards move by drag or the Move menu (task 028):
-// Draft/Ready/Blocked/Doing rewrite the task's Status line through a confirmed files write
-// (into Doing, Helm offers to start the build instead); Done/Cancelled hand off to the close skill.
+// Draft/Ready/Blocked/Doing rewrite the task's Status line through a confirmed files write, or set a
+// Linear issue's state through a confirmed http write (task 026); into Doing, Helm offers to start the
+// build instead when the project's task source can be built. Done/Cancelled hand off to the close skill.
 import { getHelm } from '@usetdt/helm-sdk/frame'
 import { STATUSES, endedBuilds, listProjects, loadProject, moveOutcome, planMove, readHandoff, sessionFor } from '../shared/tasks.js'
 import { STATUS_LABELS, STATUS_TONES, badge, button, dot, el, iconButton, notice, state, styles, fill } from '../shared/ui.js'
@@ -30,7 +31,7 @@ async function load() {
     const p = projects.find((x) => x.id === settings.project)
     if (!p) throw Object.assign(new Error('This project is no longer registered in the workspace.'), { code: 'gone' })
     if (p.availability !== 'available') throw Object.assign(new Error(`The project is ${p.availability}.`), { code: 'gone' })
-    const list = await loadProject(helm, p.id, settings.source)
+    const list = await loadProject(helm, p.id, settings.source, { team: settings.linearTeam })
     if (seq !== loadSeq) return
     project = p
     tasks = list
@@ -38,7 +39,8 @@ async function load() {
   } catch (e) {
     if (seq !== loadSeq) return
     tasks = null
-    state(app, e.code === 'later' || e.code === 'nosetup' ? 'empty' : 'error', e.message, e.code === 'later' || e.code === 'nosetup' ? undefined : { label: 'Retry', run: load })
+    const quiet = e.code === 'later' || e.code === 'nosetup'
+    state(app, quiet || e.code === 'setup' ? 'empty' : 'error', e.message, quiet ? undefined : { label: 'Retry', run: load })
   }
 }
 
@@ -68,14 +70,14 @@ async function move(t, to) {
   let r
   try {
     r = plan.kind === 'doing'
-      ? await helm.orchestrate.build({ projectId: t.projectId, taskId: t.id, host: hostOf() }, { orWrite: { connection: 'tasks', operation: 'write', args: plan.args } })
-      : await helm.call('tasks', 'write', plan.args)
+      ? await helm.orchestrate.build({ projectId: t.projectId, taskId: t.id, host: hostOf() }, { orWrite: { connection: plan.connection, operation: plan.operation, args: plan.args } })
+      : await helm.call(plan.connection, plan.operation, plan.args)
   } catch (e) {
     r = { ok: false, error: { message: e.message } }
   }
   const out = moveOutcome(r, t)
   moving.delete(t.id)
-  if (out.status === 'moved') Object.assign(t, { status: to, text: plan.args.text, sha256: out.sha256 })
+  if (out.status === 'moved') Object.assign(t, { status: to }, t.linear ? {} : { text: plan.args.text, sha256: out.sha256 })
   if (out.message) message = out.message
   if (out.reload) return load()
   render()
@@ -99,7 +101,7 @@ async function toggleHandoff(t, reload = false) {
 function card(t, col) {
   const live = sessionFor(sessions, t)
   const actions = el('div', { class: 'actions' })
-  if (col === 'ready' && !live && !moving.has(t.id)) actions.append(button('⚡ Build', () => build(t)))
+  if (col === 'ready' && !live && !moving.has(t.id) && (!t.linear || t.linear.buildable)) actions.append(button('⚡ Build', () => build(t)))
   if (live) actions.append(button('Open session', () => helm.openTab({ kind: 'session', id: live.id }), { ghost: false }))
   if (live || t.status === 'doing') actions.append(button(open.has(t.id) ? 'Hide handoff' : 'Handoff', () => toggleHandoff(t), { title: 'The build skill’s workspace handoff' }))
   const h = open.has(t.id) ? handoffs.get(t.id) : undefined
@@ -173,7 +175,7 @@ function render() {
 }
 
 helm.on('settings', (s) => {
-  const changed = s.project !== settings.project || s.source !== settings.source
+  const changed = s.project !== settings.project || s.source !== settings.source || s.linearTeam !== settings.linearTeam
   settings = s || {}
   if (changed) {
     tasks = null
