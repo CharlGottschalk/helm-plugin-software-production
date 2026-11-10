@@ -1,6 +1,9 @@
 # helm-plugin-software-production
 
-A [Helm](../helm) plugin for [tdt-software-production](https://usetdt.com) tasks:
+> **Beta.** This plugin, Helm and the Helm SDK are in beta (0.x). Expect bugs, and changes
+> between versions. Report problems in [GitHub issues](https://github.com/CharlGottschalk/helm-plugin-software-production/issues).
+
+A [Helm](https://helm.usetdt.com) plugin for [tdt-software-production](https://usetdt.com) tasks:
 
 - **Kanban** (tool): one project's tasks by status, Build on ready cards, the build
   skill's handoff on cards in progress. Drag a card, or use its Move menu, to change an
