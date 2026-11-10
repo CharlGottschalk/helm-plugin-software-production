@@ -99,10 +99,19 @@ the build skill rereads the task and refuses work that isn't ready. Kanban also 
   sets only that item's status field. Plain repository issues don't move: Done and
   Cancelled hand off to the close skill, other moves are refused with a pointer to Projects v2.
 
+## Install
+
+```bash
+helm plugin add helm-plugin-software-production
+```
+
+Then review, approve and enable it in Helm, under **System settings** → **Plugins**.
+Helm 0.1.0 or later.
+
 ## Develop
 
 ```bash
-npm install          # @usetdt/helm-sdk from ../helm/packages/sdk until it is published
+npm install          # @usetdt/helm-sdk from npm
 npm run build        # src/ → dist/, then validate
 npm run check        # parser and adapter self-check
 helm plugin link .   # then review, approve and enable in Settings → Plugins
