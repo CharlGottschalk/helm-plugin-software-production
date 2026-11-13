@@ -1,0 +1,73 @@
+# Publish @usetdt/helm-plugin-software-production to npm with provenance (Helm task 052).
+#
+# A pushed tag vX.Y.Z publishes the package. The tag must point at a commit on main, and
+# X.Y.Z must equal the package version. Run it by hand (Actions → Publish to npm → Run
+# workflow) for a dry run: the same checks and build, then `npm pack --dry-run`.
+#
+# Authentication is npm trusted publishing (OIDC): no npm token is stored anywhere. The
+# package needs a trusted publisher on npmjs.com for this repository, the workflow file
+# `publish.yml` and the environment `release`. See README.md → Release.
+name: Publish to npm
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write # OIDC for trusted publishing and the provenance statement
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # to check that the tag is on main
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Check the version
+        if: github.event_name == 'push'
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./package.json').version")
+          if [ "${REF_NAME#v}" != "$version" ]; then
+            echo "::error::Tag $REF_NAME does not match version $version"; exit 1
+          fi
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Tag $REF_NAME is not on main. Tag a merged commit."; exit 1
+          fi
+
+      - run: npm ci
+      - run: npm run build
+      - run: npm run check
+
+      # Helm installs plugins without running scripts, so dist/ is committed and must
+      # match what the source builds to.
+      - name: Check that dist/ is up to date
+        run: git diff --exit-code -- dist
+
+      - name: Publish
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = push ]; then
+            npm publish --provenance --access public
+          else
+            # npm refuses even a dry-run publish of a version that is already on npm.
+            npm pack --dry-run
+          fi

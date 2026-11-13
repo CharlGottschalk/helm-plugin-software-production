@@ -1,4 +1,4 @@
-# helm-plugin-software-production
+# @usetdt/helm-plugin-software-production
 
 > **Beta.** This plugin, Helm and the Helm SDK are in beta (0.x). Expect bugs, and changes
 > between versions. Report problems in [GitHub issues](https://github.com/CharlGottschalk/helm-plugin-software-production/issues).
@@ -102,7 +102,7 @@ the build skill rereads the task and refuses work that isn't ready. Kanban also 
 ## Install
 
 ```bash
-helm plugin add helm-plugin-software-production
+helm plugin add @usetdt/helm-plugin-software-production
 ```
 
 Then review, approve and enable it in Helm, under **System settings** → **Plugins**.
@@ -118,6 +118,29 @@ helm plugin link .   # then review, approve and enable in Settings → Plugins
 ```
 
 `dist/` is committed: Helm installs plugins without running scripts.
+
+## Release
+
+GitHub Actions publishes the package with provenance (`.github/workflows/publish.yml`).
+
+1. In a pull request, set `version` in `package.json` and commit the rebuilt `dist/`.
+2. Merge it, then tag the merged commit on `main` and push the tag:
+
+   ```sh
+   git switch main && git pull
+   git tag vX.Y.Z
+   git push origin vX.Y.Z
+   ```
+
+3. The workflow checks the tag against the version and `main`, builds, runs the
+   self-check, checks that `dist/` is up to date and runs `npm publish --provenance`.
+4. Check that the npm page of the version shows a provenance statement.
+
+A manual run (Actions → Publish to npm → Run workflow) is a dry run with
+`npm pack --dry-run`. No npm token is stored: the workflow uses npm trusted publishing.
+One-time setup on npmjs.com (package → Settings → Trusted publishing → GitHub Actions):
+user `CharlGottschalk`, repository `helm-plugin-software-production`, workflow file
+`publish.yml`, environment `release`.
 
 ## License
 
