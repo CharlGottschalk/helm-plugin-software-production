@@ -2,7 +2,7 @@
   "contract": "helm.widget/1",
   "id": "ready-tasks",
   "name": "Ready tasks",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Software-production tasks ready to pick up across linked projects, by priority.",
   "category": "Work",
   "icon": "check",

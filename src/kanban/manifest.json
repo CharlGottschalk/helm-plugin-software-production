@@ -2,7 +2,7 @@
   "contract": "helm.tool/1",
   "id": "kanban",
   "name": "Kanban",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Software-production tasks by status, from internal task files, Linear or GitHub. Start builds from ready cards; move cards to change a task's status.",
   "icon": "grid",
   "multi": true,

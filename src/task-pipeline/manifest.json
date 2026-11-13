@@ -2,7 +2,7 @@
   "contract": "helm.widget/1",
   "id": "task-pipeline",
   "name": "Task pipeline",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Task counts per lifecycle status across linked projects, with Build on ready tasks.",
   "category": "Work",
   "icon": "layers",
