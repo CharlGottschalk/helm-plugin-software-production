@@ -1,6 +1,6 @@
 {
   "name": "@usetdt/helm-plugin-software-production",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "description": "Helm plugin for tdt-software-production: Kanban tool, Ready tasks and Task pipeline widgets",
   "license": "Apache-2.0",
@@ -41,6 +41,6 @@
     "access": "public"
   },
   "devDependencies": {
-    "@usetdt/helm-sdk": "^0.2.0"
+    "@usetdt/helm-sdk": "^0.3.0"
   }
 }
